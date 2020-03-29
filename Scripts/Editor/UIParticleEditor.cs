@@ -120,7 +120,9 @@ namespace Coffee.UIExtensions
         //################################
         static readonly GUIContent s_ContentParticleMaterial = new GUIContent("Particle Material", "The material for rendering particles");
         static readonly GUIContent s_ContentTrailMaterial = new GUIContent("Trail Material", "The material for rendering particle trails");
+        static readonly GUIContent s_ContentTrailRendererMaterial = new GUIContent("TrailRender Material", "The material for rendering trail renderers");
         static readonly List<ParticleSystem> s_ParticleSystems = new List<ParticleSystem>();
+        static readonly List<TrailRenderer> s_TrailRenderers = new List<TrailRenderer>();
         static readonly Color s_GizmoColor = new Color(1f, 0.7f, 0.7f, 0.9f);
 
         static readonly List<string> s_MaskablePropertyNames = new List<string>()
@@ -144,6 +146,7 @@ namespace Coffee.UIExtensions
             base.OnEnable();
             _spParticleSystem = serializedObject.FindProperty("m_ParticleSystem");
             _spTrailParticle = serializedObject.FindProperty("m_TrailParticle");
+            _spTrailRenderer = serializedObject.FindProperty("m_TrailRenderer");
             _spScale = serializedObject.FindProperty("m_Scale");
             _spIgnoreParent = serializedObject.FindProperty("m_IgnoreParent");
             _spAnimatableProperties = serializedObject.FindProperty("m_AnimatableProperties");
@@ -185,6 +188,23 @@ namespace Coffee.UIExtensions
             EditorGUILayout.PropertyField(_spTrailParticle);
             EditorGUI.EndDisabledGroup();
 
+            EditorGUILayout.PropertyField(_spTrailRenderer);
+            EditorGUI.indentLevel++;
+            var tr = _spTrailRenderer.objectReferenceValue as TrailRenderer;
+            if (tr)
+            {
+                var sp = new SerializedObject(tr).FindProperty("m_Materials");
+
+                EditorGUILayout.PropertyField(sp.GetArrayElementAtIndex(0), s_ContentTrailRendererMaterial);
+                sp.serializedObject.ApplyModifiedProperties();
+
+                if (!Application.isPlaying && (tr.startColor.a > 0.0f || tr.endColor.a > 0.0f))
+                {
+                    EditorGUILayout.HelpBox("UIParticles set transparent in TrailRenderer at runtime to prevent double rendering.", MessageType.Warning);
+                }
+            }
+            EditorGUI.indentLevel--;
+
             var current = target as UIParticle;
 
             EditorGUILayout.PropertyField(_spIgnoreParent);
@@ -197,14 +217,20 @@ namespace Coffee.UIExtensions
             AnimatedPropertiesEditor.DrawAnimatableProperties(_spAnimatableProperties, current.material);
 
             current.GetComponentsInChildren<ParticleSystem>(true, s_ParticleSystems);
-            if (s_ParticleSystems.Any(x => x.GetComponent<UIParticle>() == null))
+            current.GetComponentsInChildren<TrailRenderer>(true, s_TrailRenderers);
+            if (s_ParticleSystems.Any(x => x.GetComponent<UIParticle>() == null) ||
+                    s_TrailRenderers.Any(x => x.GetComponent<UIParticle>() == null))
             {
                 GUILayout.BeginHorizontal();
-                EditorGUILayout.HelpBox("There are child ParticleSystems that does not have a UIParticle component.\nAdd UIParticle component to them.", MessageType.Warning);
+                EditorGUILayout.HelpBox("There are child ParticleSystems or TrailRenderers that does not have a UIParticle component.\nAdd UIParticle component to them.", MessageType.Warning);
                 GUILayout.BeginVertical();
                 if (GUILayout.Button("Fix"))
                 {
                     foreach (var p in s_ParticleSystems.Where(x => !x.GetComponent<UIParticle>()))
+                    {
+                        p.gameObject.AddComponent<UIParticle>();
+                    }
+                    foreach (var p in s_TrailRenderers.Where(x => !x.GetComponent<UIParticle>()))
                     {
                         p.gameObject.AddComponent<UIParticle>();
                     }
@@ -213,6 +239,7 @@ namespace Coffee.UIExtensions
                 GUILayout.EndHorizontal();
             }
             s_ParticleSystems.Clear();
+            s_TrailRenderers.Clear();
 
             if (current.maskable && current.material && current.material.shader)
             {
@@ -237,6 +264,7 @@ namespace Coffee.UIExtensions
         //################################
         SerializedProperty _spParticleSystem;
         SerializedProperty _spTrailParticle;
+        SerializedProperty _spTrailRenderer;
         SerializedProperty _spScale;
         SerializedProperty _spIgnoreParent;
         SerializedProperty _spAnimatableProperties;

@@ -31,6 +31,8 @@ namespace Coffee.UIExtensions
         [SerializeField] ParticleSystem m_ParticleSystem;
         [Tooltip("The UIParticle to render trail effect")]
         [SerializeField] UIParticle m_TrailParticle;
+        [Tooltip("The TrailRenderer rendered by CanvasRenderer")]
+        [SerializeField] TrailRenderer m_TrailRenderer;
         [HideInInspector] [SerializeField] bool m_IsTrail = false;
         [Tooltip("Particle effect scale")]
         [SerializeField] float m_Scale = 1;
@@ -232,6 +234,8 @@ namespace Coffee.UIExtensions
                     : rectTransform.position;
             }
 
+            m_TrailRenderer = GetComponent<TrailRenderer>();
+
             base.OnEnable();
         }
 
@@ -341,6 +345,7 @@ namespace Coffee.UIExtensions
         /// </summary>
         static void UpdateMeshes()
         {
+            Profiler.BeginSample("UpdateMeshes");
             for (int i = 0; i < s_ActiveParticles.Count; i++)
             {
                 if (s_ActiveParticles[i])
@@ -348,6 +353,7 @@ namespace Coffee.UIExtensions
                     s_ActiveParticles[i].UpdateMesh();
                 }
             }
+            Profiler.EndSample();
         }
 
         /// <summary>
@@ -507,6 +513,55 @@ namespace Coffee.UIExtensions
                     UpdateAnimatableMaterialProperties();
 
                     Profiler.EndSample();
+                }
+                else if (m_TrailRenderer && canvas)
+                {
+                    Color startColor = m_TrailRenderer.startColor;
+                    Color endColor = m_TrailRenderer.endColor;
+                    startColor.a = 0.0f;
+                    endColor.a = 0.0f;
+                    m_TrailRenderer.startColor = startColor;
+                    m_TrailRenderer.endColor = endColor;
+
+                    var rootCanvas = canvas.rootCanvas;
+                    var cam = rootCanvas.renderMode == RenderMode.ScreenSpaceOverlay
+                               ? UIParticleOverlayCamera.GetCameraForOvrelay(rootCanvas)
+                               : canvas.worldCamera ?? Camera.main;
+                    if (!cam)
+                    {
+                        return;
+                    }
+                    _mesh.Clear();
+                    m_TrailRenderer.BakeMesh(_mesh, cam, true);
+
+                    _mesh.GetColors(s_Colors);
+                    Color color;
+                    var count_c = s_Colors.Count;
+                    for (int i = 0; i < count_c; i++)
+                    {
+                        color = s_Colors[i];
+                        color.a = 1.0f;
+                        s_Colors[i] = color;
+                    }
+                    _mesh.SetColors(s_Colors);
+                    s_Colors.Clear();
+
+                    scaleaMatrix = Matrix4x4.Scale(scale * rootCanvas.transform.localScale);
+                    Matrix4x4 matrix = scaleaMatrix *
+                        Matrix4x4.Rotate(rectTransform.rotation).inverse *
+                        Matrix4x4.Scale(rectTransform.lossyScale + minimumVec3).inverse;
+                    _mesh.GetVertices(s_Vertices);
+                    var count = s_Vertices.Count;
+                    for (int i = 0; i < count; i++)
+                    {
+                        s_Vertices[i] = matrix.MultiplyPoint3x4(s_Vertices[i]);
+                    }
+                    _mesh.SetVertices(s_Vertices);
+                    _mesh.RecalculateBounds();
+                    s_Vertices.Clear();
+
+                    canvasRenderer.SetMesh(_mesh);
+                    canvasRenderer.SetMaterial(m_TrailRenderer.sharedMaterial, null);
                 }
             }
             catch (System.Exception e)
